@@ -10,6 +10,7 @@ export const especialidadesAPI = {
 }
 
 export const medicosAPI = {
+  // solo_activos es el param del backend; activo=true filtra solo activos
   listar: (params) => api.get('/medicos/', { params }),
 }
 

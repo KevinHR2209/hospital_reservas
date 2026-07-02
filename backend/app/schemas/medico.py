@@ -34,11 +34,11 @@ class MedicoOut(BaseModel):
     nombre: str
     apellido: str
     email: str
-    telefono: Optional[str]
-    numero_registro: Optional[str]
-    foto_url: Optional[str]
+    telefono: Optional[str] = None
+    numero_registro: Optional[str] = None
+    foto_url: Optional[str] = None
     activo: bool
-    especialidad: EspecialidadOut
+    especialidad: Optional[EspecialidadOut] = None
 
     class Config:
         from_attributes = True

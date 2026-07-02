@@ -15,10 +15,13 @@ router = APIRouter()
 def listar_medicos(
     especialidad_id: Optional[UUID] = None,
     solo_activos: bool = True,
+    activo: Optional[bool] = None,  # alias usado por el frontend
     db: Session = Depends(get_db)
 ):
     q = db.query(Medico).options(joinedload(Medico.especialidad))
-    if solo_activos:
+    # solo_activos tiene prioridad; activo es alias del frontend
+    filtrar_activos = activo if activo is not None else solo_activos
+    if filtrar_activos:
         q = q.filter(Medico.activo == True)
     if especialidad_id:
         q = q.filter(Medico.especialidad_id == especialidad_id)

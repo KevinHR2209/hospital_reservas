@@ -57,19 +57,17 @@ export default function ReservarPage() {
   const navigate = useNavigate()
   const [step, setStep] = useState(0)
 
-  // Step 0 - Especialidad
   const [especialidades, setEspecialidades] = useState([])
   const [espSeleccionada, setEspSeleccionada] = useState(null)
 
-  // Step 1 - Médico, Fecha, Hora
   const [medicos, setMedicos] = useState([])
+  const [loadingMedicos, setLoadingMedicos] = useState(false)
   const [medicoSel, setMedicoSel] = useState(null)
   const [fecha, setFecha] = useState('')
   const [bloques, setBloques] = useState([])
   const [horaSel, setHoraSel] = useState(null)
   const [loadingBloques, setLoadingBloques] = useState(false)
 
-  // Step 2 - Paciente
   const [paciente, setPaciente] = useState({
     nombre: '', apellido: '', rut: '', email: '', telefono: '',
     fecha_nacimiento: '', prevision: '', region: '', comuna: '',
@@ -78,7 +76,6 @@ export default function ReservarPage() {
   })
   const [errores, setErrores] = useState({})
 
-  // Step 3 - Resultado
   const [enviando, setEnviando] = useState(false)
   const [reservaCreada, setReservaCreada] = useState(null)
   const [errorEnvio, setErrorEnvio] = useState(null)
@@ -89,9 +86,14 @@ export default function ReservarPage() {
 
   useEffect(() => {
     if (espSeleccionada) {
-      medicosAPI.listar({ especialidad_id: espSeleccionada.id, activo: true })
+      setLoadingMedicos(true)
+      setMedicos([])
+      setMedicoSel(null)
+      // Pasamos especialidad_id y solo_activos=true
+      medicosAPI.listar({ especialidad_id: espSeleccionada.id, solo_activos: true })
         .then(r => setMedicos(r.data))
         .catch(() => setMedicos([]))
+        .finally(() => setLoadingMedicos(false))
     }
   }, [espSeleccionada])
 
@@ -138,20 +140,17 @@ export default function ReservarPage() {
     setEnviando(true)
     setErrorEnvio(null)
     try {
-      // 1. Crear/buscar paciente
       let pacienteId
       try {
         const busqueda = await pacientesAPI.buscar({ rut: paciente.rut })
         if (busqueda.data?.id) {
           pacienteId = busqueda.data.id
-          await pacientesAPI.actualizar(pacienteId, { ...paciente, rut: paciente.rut })
+          await pacientesAPI.actualizar(pacienteId, { ...paciente })
         }
       } catch {
         const creado = await pacientesAPI.crear({ ...paciente })
         pacienteId = creado.data.id
       }
-
-      // 2. Crear reserva
       const payload = {
         paciente_id: pacienteId,
         medico_id: medicoSel.id,
@@ -191,23 +190,18 @@ export default function ReservarPage() {
           <h1>Reservar hora médica</h1>
           <p>Completa los pasos para agendar tu consulta</p>
         </div>
-
         <StepBar current={step} />
-
         <div className="reservar-card card">
 
-          {/* ─── PASO 0: ESPECIALIDAD ─── */}
           {step === 0 && (
             <div className="step-content">
               <h2>¿Qué especialidad necesitas?</h2>
               <p className="step-desc">Selecciona la especialidad médica para tu consulta</p>
               <div className="esp-grid">
                 {especialidades.map(esp => (
-                  <button
-                    key={esp.id}
+                  <button key={esp.id}
                     className={`esp-btn ${espSeleccionada?.id === esp.id ? 'selected' : ''}`}
-                    onClick={() => setEspSeleccionada(esp)}
-                  >
+                    onClick={() => setEspSeleccionada(esp)}>
                     <span className="esp-nombre">{esp.nombre}</span>
                     {esp.descripcion && <span className="esp-desc">{esp.descripcion}</span>}
                   </button>
@@ -216,44 +210,36 @@ export default function ReservarPage() {
             </div>
           )}
 
-          {/* ─── PASO 1: MÉDICO + FECHA + HORA ─── */}
           {step === 1 && (
             <div className="step-content">
               <h2>Elige médico, fecha y hora</h2>
               <p className="step-desc">Especialidad: <strong>{espSeleccionada?.nombre}</strong></p>
-
               <div className="medicos-lista">
-                {medicos.length === 0 && (
+                {loadingMedicos ? (
+                  <div style={{ display: 'flex', justifyContent: 'center', padding: 24 }}><div className="spinner" /></div>
+                ) : medicos.length === 0 ? (
                   <div className="empty-state"><p>No hay médicos disponibles para esta especialidad.</p></div>
-                )}
-                {medicos.map(m => (
-                  <button
-                    key={m.id}
+                ) : medicos.map(m => (
+                  <button key={m.id}
                     className={`medico-btn ${medicoSel?.id === m.id ? 'selected' : ''}`}
-                    onClick={() => { setMedicoSel(m); setFecha(''); setHoraSel(null) }}
-                  >
+                    onClick={() => { setMedicoSel(m); setFecha(''); setHoraSel(null) }}>
                     <div className="medico-avatar">{m.nombre[0]}{m.apellido[0]}</div>
                     <div className="medico-info">
                       <strong>Dr(a). {m.nombre} {m.apellido}</strong>
-                      <span>{m.email}</span>
+                      <span>{m.especialidad?.nombre}</span>
                     </div>
                   </button>
                 ))}
               </div>
-
               {medicoSel && (
                 <div className="fecha-row">
                   <div className="form-group">
                     <label>Fecha de la consulta</label>
-                    <input
-                      type="date" className="form-control"
-                      min={hoy} value={fecha}
-                      onChange={e => setFecha(e.target.value)}
-                    />
+                    <input type="date" className="form-control" min={hoy} value={fecha}
+                      onChange={e => setFecha(e.target.value)} />
                   </div>
                 </div>
               )}
-
               {medicoSel && fecha && (
                 <div className="bloques-wrapper">
                   <h3>Horarios disponibles</h3>
@@ -264,12 +250,10 @@ export default function ReservarPage() {
                   ) : (
                     <div className="bloques-grid">
                       {bloques.map(b => (
-                        <button
-                          key={b.hora}
+                        <button key={b.hora}
                           disabled={b.ocupado}
                           className={`bloque-btn ${b.ocupado ? 'ocupado' : ''} ${horaSel === b.hora ? 'selected' : ''}`}
-                          onClick={() => !b.ocupado && setHoraSel(b.hora)}
-                        >
+                          onClick={() => !b.ocupado && setHoraSel(b.hora)}>
                           {b.hora}
                         </button>
                       ))}
@@ -280,12 +264,10 @@ export default function ReservarPage() {
             </div>
           )}
 
-          {/* ─── PASO 2: DATOS PACIENTE ─── */}
           {step === 2 && (
             <div className="step-content">
               <h2>Tus datos personales</h2>
               <p className="step-desc">Esta información es necesaria para confirmar tu reserva</p>
-
               <div className="form-grid">
                 <div className="form-group">
                   <label>Nombre <span className="req">*</span></label>
@@ -375,8 +357,6 @@ export default function ReservarPage() {
                     placeholder="+56 9 8765 4321" />
                 </div>
               </div>
-
-              {/* Resumen antes de confirmar */}
               <div className="resumen-box">
                 <h3>Resumen de tu reserva</h3>
                 <div className="resumen-grid">
@@ -386,17 +366,15 @@ export default function ReservarPage() {
                   <span>Hora:</span><strong>{horaSel}</strong>
                 </div>
               </div>
-
               {errorEnvio && <div className="alert alert-error">{errorEnvio}</div>}
             </div>
           )}
 
-          {/* ─── PASO 3: CONFIRMACIÓN ─── */}
           {step === 3 && reservaCreada && (
             <div className="step-content confirmacion">
               <div className="confirm-icon">✅</div>
               <h2>¡Reserva confirmada!</h2>
-              <p>Hemos enviado los detalles a tu correo electrónico. Puedes cancelar la reserva en cualquier momento desde el enlace en el correo.</p>
+              <p>Hemos enviado los detalles a tu correo electrónico.</p>
               <div className="confirm-card">
                 <div className="confirm-row"><span>Especialidad</span><strong>{reservaCreada.especialidad?.nombre}</strong></div>
                 <div className="confirm-row"><span>Médico</span><strong>Dr(a). {reservaCreada.medico?.nombre} {reservaCreada.medico?.apellido}</strong></div>
@@ -405,27 +383,22 @@ export default function ReservarPage() {
                 <div className="confirm-row"><span>Estado</span><strong className="badge badge-reservada">Reservada</strong></div>
               </div>
               <div className="confirm-actions">
-                <button className="btn btn-primary" onClick={() => { setStep(0); setEspSeleccionada(null); setMedicoSel(null); setFecha(''); setHoraSel(null); setReservaCreada(null); setPaciente({ nombre:'', apellido:'', rut:'', email:'', telefono:'', fecha_nacimiento:'', prevision:'', region:'', comuna:'', direccion:'', motivo_consulta:'', contacto_emergencia_nombre:'', contacto_emergencia_telefono:'' }) }}>
-                  Hacer otra reserva
-                </button>
+                <button className="btn btn-primary" onClick={() => {
+                  setStep(0); setEspSeleccionada(null); setMedicoSel(null)
+                  setFecha(''); setHoraSel(null); setReservaCreada(null)
+                  setPaciente({ nombre:'', apellido:'', rut:'', email:'', telefono:'', fecha_nacimiento:'', prevision:'', region:'', comuna:'', direccion:'', motivo_consulta:'', contacto_emergencia_nombre:'', contacto_emergencia_telefono:'' })
+                }}>Hacer otra reserva</button>
                 <button className="btn btn-secondary" onClick={() => navigate('/')}>Volver al inicio</button>
               </div>
             </div>
           )}
 
-          {/* ─── NAVEGACIÓN ─── */}
           {step < 3 && (
             <div className="step-nav">
               {step > 0 && (
-                <button className="btn btn-ghost" onClick={() => setStep(s => s - 1)} disabled={enviando}>
-                  ← Atrás
-                </button>
+                <button className="btn btn-ghost" onClick={() => setStep(s => s - 1)} disabled={enviando}>← Atrás</button>
               )}
-              <button
-                className="btn btn-primary"
-                disabled={!canNext() || enviando}
-                onClick={nextStep}
-              >
+              <button className="btn btn-primary" disabled={!canNext() || enviando} onClick={nextStep}>
                 {enviando ? 'Enviando...' : step === 2 ? 'Confirmar reserva →' : 'Siguiente →'}
               </button>
             </div>
