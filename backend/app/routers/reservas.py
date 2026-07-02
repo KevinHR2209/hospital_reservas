@@ -7,6 +7,7 @@ from datetime import date, datetime, timedelta
 
 from app.database import get_db
 from app.models.reserva import Reserva
+from app.models.medico import Medico
 from app.models.horario_medico import HorarioMedico
 from app.schemas.reserva import ReservaCreate, ReservaUpdateEstado, ReservaOut
 from app.services.reserva_service import crear_reserva
@@ -14,36 +15,24 @@ from app.services.reserva_service import crear_reserva
 router = APIRouter()
 
 
-def _load_reserva(db: Session, reserva_id: UUID) -> Reserva:
-    reserva = db.query(Reserva).options(
+def _q(db: Session):
+    """Query Reserva con todos los joins necesarios."""
+    return db.query(Reserva).options(
         joinedload(Reserva.paciente),
-        joinedload(Reserva.medico).joinedload(Reserva.medico.property.mapper.class_.especialidad),
+        joinedload(Reserva.medico).joinedload(Medico.especialidad),
         joinedload(Reserva.especialidad),
         joinedload(Reserva.box),
-    ).filter(Reserva.id == reserva_id).first()
-    if not reserva:
-        raise HTTPException(status_code=404, detail="Reserva no encontrada")
-    return reserva
+    )
 
 
 @router.get("/", response_model=List[ReservaOut])
 def listar_reservas(db: Session = Depends(get_db)):
-    return db.query(Reserva).options(
-        joinedload(Reserva.paciente),
-        joinedload(Reserva.medico).joinedload(Reserva.medico.property.mapper.class_.especialidad),
-        joinedload(Reserva.especialidad),
-        joinedload(Reserva.box),
-    ).order_by(Reserva.fecha, Reserva.hora_inicio).all()
+    return _q(db).order_by(Reserva.fecha, Reserva.hora_inicio).all()
 
 
 @router.get("/medico/{medico_id}", response_model=List[ReservaOut])
 def reservas_por_medico(medico_id: UUID, db: Session = Depends(get_db)):
-    return db.query(Reserva).options(
-        joinedload(Reserva.paciente),
-        joinedload(Reserva.medico).joinedload(Reserva.medico.property.mapper.class_.especialidad),
-        joinedload(Reserva.especialidad),
-        joinedload(Reserva.box),
-    ).filter(
+    return _q(db).filter(
         Reserva.medico_id == medico_id,
         Reserva.estado != "cancelada",
     ).order_by(Reserva.fecha, Reserva.hora_inicio).all()
@@ -51,12 +40,7 @@ def reservas_por_medico(medico_id: UUID, db: Session = Depends(get_db)):
 
 @router.get("/paciente/{paciente_id}", response_model=List[ReservaOut])
 def reservas_por_paciente(paciente_id: UUID, db: Session = Depends(get_db)):
-    return db.query(Reserva).options(
-        joinedload(Reserva.paciente),
-        joinedload(Reserva.medico).joinedload(Reserva.medico.property.mapper.class_.especialidad),
-        joinedload(Reserva.especialidad),
-        joinedload(Reserva.box),
-    ).filter(
+    return _q(db).filter(
         Reserva.paciente_id == paciente_id,
     ).order_by(Reserva.fecha.desc(), Reserva.hora_inicio).all()
 
@@ -64,7 +48,6 @@ def reservas_por_paciente(paciente_id: UUID, db: Session = Depends(get_db)):
 @router.get("/disponibilidad/{medico_id}/{fecha}")
 def disponibilidad_medico(medico_id: UUID, fecha: date, db: Session = Depends(get_db)):
     from app.models.especialidad import Especialidad
-    from app.models.medico import Medico
 
     medico = db.query(Medico).filter(Medico.id == medico_id, Medico.activo == True).first()
     if not medico:
@@ -98,7 +81,6 @@ def disponibilidad_medico(medico_id: UUID, fecha: date, db: Session = Depends(ge
         hora_bloque = cursor.time()
         fin_bloque = (cursor + timedelta(minutes=duracion)).time()
 
-        # Bloquear horarios ya pasados o con menos de 2h de anticipación
         en_el_pasado = datetime.combine(fecha, hora_bloque) < ahora + timedelta(hours=2)
 
         ocupado = any(
@@ -126,18 +108,13 @@ def disponibilidad_medico(medico_id: UUID, fecha: date, db: Session = Depends(ge
 
 @router.post("/", response_model=ReservaOut, status_code=201)
 def nueva_reserva(data: ReservaCreate, db: Session = Depends(get_db)):
-    return crear_reserva(db, data)
+    reserva = crear_reserva(db, data)
+    return _q(db).filter(Reserva.id == reserva.id).first()
 
 
 @router.patch("/{reserva_id}/estado", response_model=ReservaOut)
 def cambiar_estado_reserva(reserva_id: UUID, data: ReservaUpdateEstado, db: Session = Depends(get_db)):
-    reserva = db.query(Reserva).options(
-        joinedload(Reserva.paciente),
-        joinedload(Reserva.medico).joinedload(Reserva.medico.property.mapper.class_.especialidad),
-        joinedload(Reserva.especialidad),
-        joinedload(Reserva.box),
-    ).filter(Reserva.id == reserva_id).first()
-
+    reserva = db.query(Reserva).filter(Reserva.id == reserva_id).first()
     if not reserva:
         raise HTTPException(status_code=404, detail="Reserva no encontrada")
 
@@ -150,10 +127,9 @@ def cambiar_estado_reserva(reserva_id: UUID, data: ReservaUpdateEstado, db: Sess
 
     reserva.estado = data.estado
     if data.estado == "cancelada":
-        reserva.cancel_token = None  # Invalidar token al cancelar manualmente
+        reserva.cancel_token = None
     db.commit()
-    db.refresh(reserva)
-    return reserva
+    return _q(db).filter(Reserva.id == reserva_id).first()
 
 
 @router.get("/cancelar/{token}", response_class=HTMLResponse)
@@ -166,10 +142,8 @@ def cancelar_por_token(token: str, db: Session = Depends(get_db)):
 
     if not reserva:
         return HTMLResponse(_html_error("Token inválido", "Este enlace de cancelación no es válido o ya fue usado."), status_code=404)
-
     if reserva.estado == "cancelada":
         return HTMLResponse(_html_info("Ya cancelada", "Esta reserva ya estaba cancelada anteriormente."), status_code=200)
-
     if reserva.estado == "completada":
         return HTMLResponse(_html_error("No cancelable", "Esta reserva ya fue completada y no se puede cancelar."), status_code=400)
 
@@ -180,19 +154,20 @@ def cancelar_por_token(token: str, db: Session = Depends(get_db)):
     nombre = f"{reserva.paciente.nombre} {reserva.paciente.apellido}" if reserva.paciente else "Paciente"
     medico = f"Dr(a). {reserva.medico.nombre} {reserva.medico.apellido}" if reserva.medico else ""
     especialidad = reserva.especialidad.nombre if reserva.especialidad else ""
-    fecha = str(reserva.fecha)
-    hora = str(reserva.hora_inicio)[:5]
-    return HTMLResponse(_html_ok(nombre, medico, especialidad, fecha, hora), status_code=200)
+    return HTMLResponse(_html_ok(nombre, medico, especialidad, str(reserva.fecha), str(reserva.hora_inicio)[:5]))
 
 
 @router.get("/{reserva_id}", response_model=ReservaOut)
 def obtener_reserva(reserva_id: UUID, db: Session = Depends(get_db)):
-    return _load_reserva(db, reserva_id)
+    r = _q(db).filter(Reserva.id == reserva_id).first()
+    if not r:
+        raise HTTPException(status_code=404, detail="Reserva no encontrada")
+    return r
 
 
 # ── HTML helpers ──────────────────────────────────────────────────────────────
 
-def _base_html(titulo: str, icono: str, color: str, mensaje: str, detalle: str = "") -> str:
+def _base_html(titulo, icono, color, mensaje, detalle=""):
     return f"""
     <!DOCTYPE html><html lang="es">
     <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -212,31 +187,16 @@ def _base_html(titulo: str, icono: str, color: str, mensaje: str, detalle: str =
     </style></head>
     <body><div class="card">
       <div class="icon" style="background:{color}20"><span>{icono}</span></div>
-      <h1>{titulo}</h1>
-      <p>{mensaje}</p>
-      {detalle}
+      <h1>{titulo}</h1><p>{mensaje}</p>{detalle}
       <p class="brand">🏥 Hospital Reservas</p>
-    </div></body></html>
-    """
+    </div></body></html>"""
 
+def _html_ok(nombre, medico, especialidad, fecha, hora):
+    det = f"<div class='detail'><p>Paciente: <strong>{nombre}</strong></p><p>Médico: <strong>{medico}</strong></p><p>Especialidad: <strong>{especialidad}</strong></p><p>Fecha: <strong>{fecha}</strong></p><p>Hora: <strong>{hora}</strong></p></div><a href='http://localhost:5173/reservar' class='btn'>Nueva reserva</a>"
+    return _base_html("Reserva cancelada", "✅", "#22c55e", "Tu reserva ha sido cancelada exitosamente.", det)
 
-def _html_ok(nombre: str, medico: str, especialidad: str, fecha: str, hora: str) -> str:
-    detalle = f"""
-    <div class="detail">
-      <p>Paciente: <strong>{nombre}</strong></p>
-      <p>Médico: <strong>{medico}</strong></p>
-      <p>Especialidad: <strong>{especialidad}</strong></p>
-      <p>Fecha: <strong>{fecha}</strong></p>
-      <p>Hora: <strong>{hora}</strong></p>
-    </div>
-    <a href="http://localhost:5173/reservar" class="btn">Nueva reserva</a>
-    """
-    return _base_html("Reserva cancelada", "✅", "#22c55e", "Tu reserva ha sido cancelada exitosamente.", detalle)
-
-
-def _html_error(titulo: str, mensaje: str) -> str:
+def _html_error(titulo, mensaje):
     return _base_html(titulo, "❌", "#ef4444", mensaje)
 
-
-def _html_info(titulo: str, mensaje: str) -> str:
+def _html_info(titulo, mensaje):
     return _base_html(titulo, "ℹ️", "#3b82f6", mensaje)

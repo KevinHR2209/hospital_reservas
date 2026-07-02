@@ -25,15 +25,20 @@ def crear_horario(data: HorarioMedicoCreate, db: Session = Depends(get_db)):
     medico = db.query(Medico).filter(Medico.id == data.medico_id, Medico.activo == True).first()
     if not medico:
         raise HTTPException(status_code=404, detail="Médico no encontrado o inactivo")
+    if data.hora_fin <= data.hora_inicio:
+        raise HTTPException(status_code=400, detail="hora_fin debe ser posterior a hora_inicio")
+    # Upsert: si ya existe el horario para ese día, lo actualiza en vez de lanzar 409
     existente = db.query(HorarioMedico).filter(
         HorarioMedico.medico_id == data.medico_id,
         HorarioMedico.dia_semana == data.dia_semana
     ).first()
     if existente:
-        raise HTTPException(
-            status_code=409,
-            detail=f"El médico ya tiene horario para el {DIAS[data.dia_semana]}"
-        )
+        existente.hora_inicio = data.hora_inicio
+        existente.hora_fin = data.hora_fin
+        existente.activo = True
+        db.commit()
+        db.refresh(existente)
+        return existente
     horario = HorarioMedico(**data.model_dump())
     db.add(horario)
     db.commit()
@@ -46,10 +51,12 @@ def actualizar_horario(horario_id: UUID, data: HorarioMedicoUpdate, db: Session 
     horario = db.query(HorarioMedico).filter(HorarioMedico.id == horario_id).first()
     if not horario:
         raise HTTPException(status_code=404, detail="Horario no encontrado")
-    if data.hora_inicio and data.hora_fin:
-        if data.hora_fin <= data.hora_inicio:
-            raise HTTPException(status_code=400, detail="hora_fin debe ser posterior a hora_inicio")
-    for campo, valor in data.model_dump(exclude_unset=True).items():
+    payload = data.model_dump(exclude_unset=True)
+    hi = payload.get("hora_inicio", horario.hora_inicio)
+    hf = payload.get("hora_fin", horario.hora_fin)
+    if hf <= hi:
+        raise HTTPException(status_code=400, detail="hora_fin debe ser posterior a hora_inicio")
+    for campo, valor in payload.items():
         setattr(horario, campo, valor)
     db.commit()
     db.refresh(horario)
