@@ -16,7 +16,6 @@ router = APIRouter()
 
 
 def _q(db: Session):
-    """Query Reserva con todos los joins necesarios."""
     return db.query(Reserva).options(
         joinedload(Reserva.paciente),
         joinedload(Reserva.medico).joinedload(Medico.especialidad),
@@ -54,7 +53,7 @@ def disponibilidad_medico(medico_id: UUID, fecha: date, db: Session = Depends(ge
         raise HTTPException(status_code=404, detail="Médico no encontrado")
 
     especialidad = db.query(Especialidad).filter(Especialidad.id == medico.especialidad_id).first()
-    duracion = especialidad.duracion_consulta_minutos if especialidad else 30
+    duracion = int(especialidad.duracion_consulta_minutos) if especialidad else 30
 
     dia_semana = fecha.weekday()
     horario = db.query(HorarioMedico).filter(
@@ -152,9 +151,9 @@ def cancelar_por_token(token: str, db: Session = Depends(get_db)):
     db.commit()
 
     nombre = f"{reserva.paciente.nombre} {reserva.paciente.apellido}" if reserva.paciente else "Paciente"
-    medico = f"Dr(a). {reserva.medico.nombre} {reserva.medico.apellido}" if reserva.medico else ""
-    especialidad = reserva.especialidad.nombre if reserva.especialidad else ""
-    return HTMLResponse(_html_ok(nombre, medico, especialidad, str(reserva.fecha), str(reserva.hora_inicio)[:5]))
+    medico_str = f"Dr(a). {reserva.medico.nombre} {reserva.medico.apellido}" if reserva.medico else ""
+    especialidad_str = reserva.especialidad.nombre if reserva.especialidad else ""
+    return HTMLResponse(_html_ok(nombre, medico_str, especialidad_str, str(reserva.fecha), str(reserva.hora_inicio)[:5]))
 
 
 @router.get("/{reserva_id}", response_model=ReservaOut)
@@ -165,31 +164,12 @@ def obtener_reserva(reserva_id: UUID, db: Session = Depends(get_db)):
     return r
 
 
-# ── HTML helpers ──────────────────────────────────────────────────────────────
-
 def _base_html(titulo, icono, color, mensaje, detalle=""):
-    return f"""
-    <!DOCTYPE html><html lang="es">
+    return f"""<!DOCTYPE html><html lang="es">
     <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
     <title>{titulo} — Hospital Reservas</title>
-    <style>
-      *{{box-sizing:border-box;margin:0;padding:0}}
-      body{{font-family:Inter,Arial,sans-serif;background:#f0f7ff;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}}
-      .card{{background:#fff;border-radius:20px;padding:48px 40px;max-width:460px;width:100%;text-align:center;box-shadow:0 8px 32px rgba(0,64,128,0.12)}}
-      .icon{{width:72px;height:72px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:32px;margin:0 auto 24px}}
-      h1{{font-size:24px;font-weight:900;color:#0f172a;margin-bottom:8px}}
-      p{{color:#475569;font-size:15px;line-height:1.6;margin-bottom:8px}}
-      .detail{{background:#f8faff;border-radius:12px;padding:16px 20px;margin:20px 0;text-align:left;border:1px solid #e2e8f0}}
-      .detail p{{font-size:14px;margin-bottom:6px;color:#334155}}
-      .detail strong{{color:#0f172a}}
-      .btn{{display:inline-block;margin-top:24px;background:#0284c7;color:#fff;font-weight:700;padding:12px 28px;border-radius:10px;text-decoration:none;font-size:15px}}
-      .brand{{color:#94a3b8;font-size:13px;margin-top:24px}}
-    </style></head>
-    <body><div class="card">
-      <div class="icon" style="background:{color}20"><span>{icono}</span></div>
-      <h1>{titulo}</h1><p>{mensaje}</p>{detalle}
-      <p class="brand">🏥 Hospital Reservas</p>
-    </div></body></html>"""
+    <style>*{{box-sizing:border-box;margin:0;padding:0}}body{{font-family:Inter,Arial,sans-serif;background:#f0f7ff;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}}.card{{background:#fff;border-radius:20px;padding:48px 40px;max-width:460px;width:100%;text-align:center;box-shadow:0 8px 32px rgba(0,64,128,0.12)}}.icon{{width:72px;height:72px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:32px;margin:0 auto 24px}}h1{{font-size:24px;font-weight:900;color:#0f172a;margin-bottom:8px}}p{{color:#475569;font-size:15px;line-height:1.6;margin-bottom:8px}}.detail{{background:#f8faff;border-radius:12px;padding:16px 20px;margin:20px 0;text-align:left;border:1px solid #e2e8f0}}.detail p{{font-size:14px;margin-bottom:6px;color:#334155}}.detail strong{{color:#0f172a}}.btn{{display:inline-block;margin-top:24px;background:#0284c7;color:#fff;font-weight:700;padding:12px 28px;border-radius:10px;text-decoration:none;font-size:15px}}.brand{{color:#94a3b8;font-size:13px;margin-top:24px}}</style></head>
+    <body><div class="card"><div class="icon" style="background:{color}20"><span>{icono}</span></div><h1>{titulo}</h1><p>{mensaje}</p>{detalle}<p class="brand">🏥 Hospital Reservas</p></div></body></html>"""
 
 def _html_ok(nombre, medico, especialidad, fecha, hora):
     det = f"<div class='detail'><p>Paciente: <strong>{nombre}</strong></p><p>Médico: <strong>{medico}</strong></p><p>Especialidad: <strong>{especialidad}</strong></p><p>Fecha: <strong>{fecha}</strong></p><p>Hora: <strong>{hora}</strong></p></div><a href='http://localhost:5173/reservar' class='btn'>Nueva reserva</a>"
