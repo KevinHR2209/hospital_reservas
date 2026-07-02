@@ -1,0 +1,69 @@
+.navbar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
+}
+
+.navbar-inner {
+  max-width: var(--content-wide);
+  margin-inline: auto;
+  padding: var(--space-3) var(--space-6);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-6);
+}
+
+.navbar-logo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  text-decoration: none;
+  color: var(--color-text);
+  font-weight: 700;
+  font-size: var(--text-base);
+  font-family: var(--font-display);
+}
+
+.navbar-logo:hover {
+  color: var(--color-primary);
+}
+
+.navbar-links {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.navbar-links a {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-text-muted);
+  text-decoration: none;
+  transition: all var(--transition-interactive);
+}
+
+.navbar-links a:hover {
+  color: var(--color-text);
+  background: var(--color-surface-offset);
+}
+
+.navbar-links a.active {
+  color: var(--color-primary);
+  background: var(--color-primary-highlight);
+}
+
+@media (max-width: 600px) {
+  .navbar-inner {
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .navbar-links a span {
+    display: none;
+  }
+}
