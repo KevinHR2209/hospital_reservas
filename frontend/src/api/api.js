@@ -7,15 +7,22 @@ const api = axios.create({
 
 export const especialidadesAPI = {
   listar: () => api.get('/especialidades/'),
+  crear: (data) => api.post('/especialidades/', data),
+  actualizar: (id, data) => api.patch(`/especialidades/${id}`, data),
 }
 
 export const medicosAPI = {
-  // solo_activos es el param del backend; activo=true filtra solo activos
   listar: (params) => api.get('/medicos/', { params }),
+  crear: (data) => api.post('/medicos/', data),
+  actualizar: (id, data) => api.patch(`/medicos/${id}`, data),
+  desactivar: (id) => api.delete(`/medicos/${id}`),
 }
 
 export const horariosAPI = {
   porMedico: (medicoId) => api.get(`/horarios/medico/${medicoId}`),
+  crear: (data) => api.post('/horarios/', data),
+  actualizar: (id, data) => api.patch(`/horarios/${id}`, data),
+  eliminar: (id) => api.delete(`/horarios/${id}`),
 }
 
 export const disponibilidadAPI = {

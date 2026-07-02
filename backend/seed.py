@@ -8,7 +8,7 @@ from app.models.especialidad import Especialidad
 from app.models.medico import Medico
 from app.models.box import Box
 from app.models.horario_medico import HorarioMedico
-import uuid
+from datetime import time
 
 Base.metadata.create_all(bind=engine)
 db = SessionLocal()
@@ -76,11 +76,14 @@ if db.query(Medico).count() == 0:
     db.commit()
     print(f"[SEED] {len(medico_objs)} médicos creados")
 
-    # Horarios: Lunes a Viernes 08:00-17:00
-    from datetime import time
-    medico_objs_db = db.query(Medico).all()
-    for medico in medico_objs_db:
-        for dia in range(0, 5):  # 0=Lunes .. 4=Viernes
+# ---- Horarios: siempre verificar y crear si faltan ----
+medicos_sin_horario = [
+    m for m in db.query(Medico).filter(Medico.activo == True).all()
+    if db.query(HorarioMedico).filter(HorarioMedico.medico_id == m.id).count() == 0
+]
+if medicos_sin_horario:
+    for medico in medicos_sin_horario:
+        for dia in range(0, 5):  # Lunes a Viernes
             db.add(HorarioMedico(
                 medico_id=medico.id,
                 dia_semana=dia,
@@ -88,7 +91,9 @@ if db.query(Medico).count() == 0:
                 hora_fin=time(17, 0),
             ))
     db.commit()
-    print("[SEED] Horarios creados para todos los médicos")
+    print(f"[SEED] Horarios creados para {len(medicos_sin_horario)} médicos")
+else:
+    print("[SEED] Todos los médicos ya tienen horarios.")
 
 db.close()
 print("[SEED] Completado.")
