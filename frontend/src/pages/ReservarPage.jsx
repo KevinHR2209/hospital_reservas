@@ -16,8 +16,7 @@ function validarRut(rut) {
   if (clean.length < 2) return false
   const dv = clean.slice(-1).toUpperCase()
   const num = parseInt(clean.slice(0, -1), 10)
-  let sum = 0, mul = 2
-  let tmp = num
+  let sum = 0, mul = 2, tmp = num
   while (tmp > 0) {
     sum += (tmp % 10) * mul
     tmp = Math.floor(tmp / 10)
@@ -35,6 +34,18 @@ function formatRut(val) {
   const dv = clean.slice(-1)
   const bodyFmt = body.replace(/(\d)(?=(\d{3})+(?!\d))/g, '$1.')
   return `${bodyFmt}-${dv}`
+}
+
+// Extrae un mensaje legible de cualquier error de axios/FastAPI
+function extraerMensajeError(e) {
+  const data = e?.response?.data
+  if (!data) return 'Error de conexión. Intenta nuevamente.'
+  if (typeof data.detail === 'string') return data.detail
+  if (Array.isArray(data.detail)) {
+    return data.detail.map(d => d?.msg || JSON.stringify(d)).join(' | ')
+  }
+  if (typeof data === 'string') return data
+  return 'Error inesperado. Intenta nuevamente.'
 }
 
 const STEPS = ['Especialidad', 'Médico y Hora', 'Tus datos', 'Confirmación']
@@ -75,7 +86,6 @@ export default function ReservarPage() {
     contacto_emergencia_telefono: ''
   })
   const [errores, setErrores] = useState({})
-
   const [enviando, setEnviando] = useState(false)
   const [reservaCreada, setReservaCreada] = useState(null)
   const [errorEnvio, setErrorEnvio] = useState(null)
@@ -89,7 +99,6 @@ export default function ReservarPage() {
       setLoadingMedicos(true)
       setMedicos([])
       setMedicoSel(null)
-      // Pasamos especialidad_id y solo_activos=true
       medicosAPI.listar({ especialidad_id: espSeleccionada.id, solo_activos: true })
         .then(r => setMedicos(r.data))
         .catch(() => setMedicos([]))
@@ -140,31 +149,52 @@ export default function ReservarPage() {
     setEnviando(true)
     setErrorEnvio(null)
     try {
-      let pacienteId
+      // 1. Buscar paciente por RUT
+      let pacienteId = null
       try {
         const busqueda = await pacientesAPI.buscar({ rut: paciente.rut })
-        if (busqueda.data?.id) {
-          pacienteId = busqueda.data.id
-          await pacientesAPI.actualizar(pacienteId, { ...paciente })
+        const lista = busqueda.data
+        if (Array.isArray(lista) && lista.length > 0) {
+          pacienteId = lista[0].id
+          // Actualizar datos del paciente existente
+          await pacientesAPI.actualizar(pacienteId, {
+            nombre: paciente.nombre,
+            apellido: paciente.apellido,
+            email: paciente.email,
+            telefono: paciente.telefono,
+            fecha_nacimiento: paciente.fecha_nacimiento,
+            prevision: paciente.prevision,
+            region: paciente.region,
+            comuna: paciente.comuna,
+            direccion: paciente.direccion,
+            contacto_emergencia_nombre: paciente.contacto_emergencia_nombre,
+            contacto_emergencia_telefono: paciente.contacto_emergencia_telefono,
+          })
         }
       } catch {
+        // Si falla la búsqueda, continuar e intentar crear
+      }
+
+      // 2. Si no existe, crear paciente nuevo
+      if (!pacienteId) {
         const creado = await pacientesAPI.crear({ ...paciente })
         pacienteId = creado.data.id
       }
+
+      // 3. Crear la reserva
       const payload = {
         paciente_id: pacienteId,
         medico_id: medicoSel.id,
         especialidad_id: espSeleccionada.id,
-        fecha,
-        hora_inicio: horaSel + ':00',
+        fecha: fecha,
+        hora_inicio: horaSel.length === 5 ? horaSel + ':00' : horaSel,
         motivo_consulta: paciente.motivo_consulta,
       }
       const result = await reservasAPI.crear(payload)
       setReservaCreada(result.data)
       setStep(3)
     } catch (e) {
-      const msg = e?.response?.data?.detail || 'Error al crear la reserva. Intenta nuevamente.'
-      setErrorEnvio(msg)
+      setErrorEnvio(extraerMensajeError(e))
     } finally {
       setEnviando(false)
     }
@@ -181,6 +211,17 @@ export default function ReservarPage() {
     if (step === 1) return !!medicoSel && !!fecha && !!horaSel
     if (step === 2) return true
     return false
+  }
+
+  const resetForm = () => {
+    setStep(0); setEspSeleccionada(null); setMedicoSel(null)
+    setFecha(''); setHoraSel(null); setReservaCreada(null); setErrorEnvio(null)
+    setPaciente({
+      nombre: '', apellido: '', rut: '', email: '', telefono: '',
+      fecha_nacimiento: '', prevision: '', region: '', comuna: '',
+      direccion: '', motivo_consulta: '', contacto_emergencia_nombre: '',
+      contacto_emergencia_telefono: ''
+    })
   }
 
   return (
@@ -366,7 +407,7 @@ export default function ReservarPage() {
                   <span>Hora:</span><strong>{horaSel}</strong>
                 </div>
               </div>
-              {errorEnvio && <div className="alert alert-error">{errorEnvio}</div>}
+              {errorEnvio && <div className="alert alert-error">{String(errorEnvio)}</div>}
             </div>
           )}
 
@@ -379,15 +420,11 @@ export default function ReservarPage() {
                 <div className="confirm-row"><span>Especialidad</span><strong>{reservaCreada.especialidad?.nombre}</strong></div>
                 <div className="confirm-row"><span>Médico</span><strong>Dr(a). {reservaCreada.medico?.nombre} {reservaCreada.medico?.apellido}</strong></div>
                 <div className="confirm-row"><span>Fecha</span><strong>{reservaCreada.fecha}</strong></div>
-                <div className="confirm-row"><span>Hora</span><strong>{reservaCreada.hora_inicio?.slice(0,5)} – {reservaCreada.hora_fin?.slice(0,5)}</strong></div>
+                <div className="confirm-row"><span>Hora</span><strong>{String(reservaCreada.hora_inicio).slice(0,5)} – {String(reservaCreada.hora_fin).slice(0,5)}</strong></div>
                 <div className="confirm-row"><span>Estado</span><strong className="badge badge-reservada">Reservada</strong></div>
               </div>
               <div className="confirm-actions">
-                <button className="btn btn-primary" onClick={() => {
-                  setStep(0); setEspSeleccionada(null); setMedicoSel(null)
-                  setFecha(''); setHoraSel(null); setReservaCreada(null)
-                  setPaciente({ nombre:'', apellido:'', rut:'', email:'', telefono:'', fecha_nacimiento:'', prevision:'', region:'', comuna:'', direccion:'', motivo_consulta:'', contacto_emergencia_nombre:'', contacto_emergencia_telefono:'' })
-                }}>Hacer otra reserva</button>
+                <button className="btn btn-primary" onClick={resetForm}>Hacer otra reserva</button>
                 <button className="btn btn-secondary" onClick={() => navigate('/')}>Volver al inicio</button>
               </div>
             </div>

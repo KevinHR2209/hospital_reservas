@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from uuid import UUID
 
 from app.database import get_db
@@ -19,7 +19,11 @@ def listar_pacientes(solo_activos: bool = True, db: Session = Depends(get_db)):
 
 
 @router.get("/buscar", response_model=List[PacienteOut])
-def buscar_paciente(rut: str = None, email: str = None, db: Session = Depends(get_db)):
+def buscar_paciente(
+    rut: Optional[str] = None,
+    email: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
     if not rut and not email:
         raise HTTPException(status_code=400, detail="Debe proporcionar rut o email para buscar")
     q = db.query(Paciente).filter(Paciente.activo == True)
@@ -49,6 +53,16 @@ def crear_paciente(data: PacienteCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(paciente)
     return paciente
+
+
+@router.patch("/buscar", response_model=List[PacienteOut])
+def buscar_paciente_patch(
+    rut: Optional[str] = None,
+    email: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """Alias por si el router registra GET /buscar después de /{id}"""
+    return buscar_paciente(rut=rut, email=email, db=db)
 
 
 @router.patch("/{paciente_id}", response_model=PacienteOut)
