@@ -18,6 +18,7 @@ export default function Navbar() {
         <div className="navbar-links">
           <Link to="/" className={isActive('/')}><span>Inicio</span></Link>
           <Link to="/reservar" className={isActive('/reservar')}><span>Reservar hora</span></Link>
+          <Link to="/agenda" className={isActive('/agenda')}><span>Agenda del día</span></Link>
           <Link to="/admin" className={isActive('/admin')}><span>Administración</span></Link>
         </div>
       </div>
